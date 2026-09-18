@@ -51,6 +51,24 @@ public class Runner
     /*Defines the behaviour of an individual bidder. Note you have to decide how to incorporate your lock.*/
     public void bidder(int bidderId) 
     {
+
+         for(int i = 0; i < iterations; i++) 
+        {
+            lock.lock();
+
+            try 
+            {
+                double currentBid = auction.getHighestBid();
+
+                double newBid = currentBid + 1.0;
+
+                auction.placeBid(bidderId, newBid);
+            }
+            finally 
+            {
+                lock.unlock();
+            }
+        }
        
     }
 
