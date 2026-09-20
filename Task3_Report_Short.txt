@@ -1,0 +1,39 @@
+COS 226 Assignment 1 - Task 3: TTAS vs CLH vs MCS under increasing contention
+
+
+
+
+1. Design
+
+We compared TTAS, CLH and MCS locks in the concurrent auction with 2, 4, 8 and 16 bidder threads. Each thread did 1000 bidding iterations (lock, read highest bid, bid 1.0 higher, unlock), the same for every lock and thread count. Each configuration was run 5 times after one discarded warm-up run. The lock order was rotated every run, each run used a fresh Auction and lock, and all threads were released together with a start latch. The machine had 8 logical cores (Ubuntu under WSL, OpenJDK 1.8). An attempt with 10,000 iterations was too slow at 16 threads, so 1000 was used.
+
+
+2. Measurements
+
+We recorded total execution time, total bids, final highest bid and bids won per bidder. Because every bid is exactly 1.0 higher, correct mutual exclusion requires the total bids and the final highest bid to equal threads x iterations. Bids won over the whole auction is always 1000 per bidder, so for fairness we also counted wins in the first half of the auction and computed Jain's fairness index (1.0 = perfectly even). Our additional measurement is the time waiting to acquire the lock (mean, 99th percentile, maximum). We chose it because the locks differ in how they treat waiting threads (TTAS has no ordering, CLH and MCS use a FIFO queue), and this shows in the tail of the waiting times.
+
+
+3. Results
+
+All 60 runs were correct: total bids and final highest bid always equalled threads x iterations.
+
+With 2 and 4 threads all locks took only 1 to 3 ms and the differences were within the run-to-run noise (median at 2 threads: TTAS 1.18 ms, CLH 1.58 ms, MCS 1.66 ms). At 2 threads CLH and MCS were much fairer than TTAS (median Jain index 0.998 and 0.992 against 0.927).
+
+At 8 and 16 threads the queue locks had very slow runs. At 8 threads MCS had one run of 1142 ms and CLH one of 37 ms. At 16 threads TTAS took 4.3 to 14.7 ms in every run. MCS took 4.5 to 8.1 ms in four runs and 849 ms in one. CLH took 10.5 s, 27.4 s and 14.4 s in three of its five runs, and 4.5 ms and 46.9 ms in the other two. The median 99th percentile wait at 16 threads was 8.8 microseconds for TTAS, 1.6 microseconds for MCS and 32 ms for CLH.
+
+
+4. Analysis
+
+We expected the queue locks to scale better than TTAS, because each waiter spins on its own variable, while in TTAS every release invalidates the cached flag of all waiters. This was not observed. The reason is that at 16 threads there are twice as many threads as cores. The locks spin, so descheduled threads cannot run. TTAS is not affected because any running thread can take the lock. A queue lock must hand the lock to the next thread in line, and if that thread is descheduled the whole queue stalls until the operating system runs it again. In the slow CLH runs the average wait was 7 to 24 ms, thousands of times more than in the normal runs. We cannot conclude that CLH is worse than MCS, since both showed the effect and we only have 5 runs per configuration.
+
+Fairness at 2 threads supports the theory: FIFO locks shared the auction evenly and TTAS did not. At 4 or more threads all three locks looked uneven, but this is mostly thread start-up skew and OS scheduling (some threads finished all 1000 bids before others started), not lock behaviour, so we do not draw conclusions from it.
+
+
+5. Limitations
+
+Runs last only 1 to 15 ms, so small differences are unreliable. Results for 8 and 16 threads are dominated by the scheduler because threads equal or exceed cores, and the machine was running other programs. Two nanoTime() calls per acquisition add a small equal overhead to all locks.
+
+
+6. Conclusion
+
+All three locks gave correct mutual exclusion. With free cores (2 and 4 threads) the locks were equally fast, and CLH and MCS were fairer than TTAS. When threads reached or exceeded the cores, TTAS stayed consistent while CLH and MCS occasionally stalled for seconds. TTAS is simple and robust but unfair; CLH and MCS are fair but need every queued thread to be running, so they suit systems with at most as many threads as cores.
